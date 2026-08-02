@@ -1,0 +1,368 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Window = Rayfield:CreateWindow({
+    Name = "nect hub",
+    ConfigurationSaving = {Enabled = false},
+    KeySystem = false
+})
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LP = Players.LocalPlayer
+local Cam = workspace.CurrentCamera
+
+-- ตัวแปรระบบบิน
+local fly = false
+local spd = 50
+local inf = false
+local hj = false
+local jp = 50
+local bv, bg, flyConn
+local ControlModule = nil
+
+task.spawn(function()
+    pcall(function()
+        ControlModule = require(LP:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"):WaitForChild("ControlModule"))
+    end)
+end)
+
+local function stopFly()
+    if flyConn then flyConn:Disconnect() flyConn = nil end
+    if bv then bv:Destroy() bv = nil end
+    if bg then bg:Destroy() bg = nil end
+    if LP.Character then
+        local h = LP.Character:FindFirstChildOfClass("Humanoid")
+        if h then h.PlatformStand = false end
+    end
+end
+
+local function startFly()
+    stopFly()
+    local char = LP.Character or LP.CharacterAdded:Wait()
+    local h = char:WaitForChild("Humanoid")
+    local r = char:WaitForChild("HumanoidRootPart")
+
+    h.PlatformStand = true
+    bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(300000, 300000, 300000)
+    bv.Velocity = Vector3.zero
+    bv.Parent = r
+
+    bg = Instance.new("BodyGyro")
+    bg.MaxTorque = Vector3.new(300000, 300000, 300000)
+    bg.P = 9000
+    bg.CFrame = r.CFrame
+    bg.Parent = r
+
+    flyConn = RunService.RenderStepped:Connect(function()
+        if not fly or not char.Parent or not h or not r then
+            stopFly()
+            return
+        end
+        bg.CFrame = Cam.CFrame
+        local velocity = Vector3.zero
+        if ControlModule then
+            local rawMove = ControlModule:GetMoveVector()
+            if rawMove.Magnitude > 0 then
+                velocity = (Cam.CFrame.LookVector * -rawMove.Z + Cam.CFrame.RightVector * rawMove.X) * spd
+            end
+        end
+        bv.Velocity = velocity
+    end)
+end
+
+-- กระโดดไม่จำกัด
+UserInputService.JumpRequest:Connect(function()
+    if inf and LP.Character then
+        local h = LP.Character:FindFirstChildOfClass("Humanoid")
+        if h then h:ChangeState(3) end
+    end
+end)
+
+-- ==================== PRO ESP & CHAMS (MASTER TOGGLE) ====================
+local masterEspEnabled = false
+local boxEnabled = false
+local nameEnabled = false
+local healthEnabled = false
+local chamsEnabled = false
+
+local espColor = Color3.fromRGB(255, 50, 50)
+local chamsColor = Color3.fromRGB(0, 255, 255)
+
+local espCache = {}
+local chamsCache = {}
+
+local function createESP(p)
+    if p == LP then return end
+    
+    local box = Drawing.new("Square")
+    box.Visible = false
+    box.Thickness = 1.5
+    box.Filled = false
+
+    local nameText = Drawing.new("Text")
+    nameText.Visible = false
+    nameText.Size = 13
+    nameText.Center = true
+    nameText.Outline = true
+
+    local healthBg = Drawing.new("Square")
+    healthBg.Visible = false
+    healthBg.Color = Color3.fromRGB(0, 0, 0)
+    healthBg.Thickness = 1
+    healthBg.Filled = true
+
+    local healthBar = Drawing.new("Square")
+    healthBar.Visible = false
+    healthBar.Thickness = 1
+    healthBar.Filled = true
+
+    espCache[p] = {Box = box, Name = nameText, HealthBg = healthBg, Health = healthBar}
+
+    local function setupChams(char)
+        if chamsCache[p] then
+            pcall(function() chamsCache[p]:Destroy() end)
+            chamsCache[p] = nil
+        end
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "ProChams"
+        highlight.Adornee = char
+        highlight.FillColor = chamsColor
+        highlight.OutlineColor = chamsColor
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 0
+        highlight.Enabled = false
+        highlight.Parent = char
+        chamsCache[p] = highlight
+    end
+
+    p.CharacterAdded:Connect(setupChams)
+    if p.Character then
+        setupChams(p.Character)
+    end
+end
+
+local function removeESP(p)
+    if espCache[p] then
+        for _, obj in pairs(espCache[p]) do
+            pcall(function() obj:Remove() end)
+        end
+        espCache[p] = nil
+    end
+    if chamsCache[p] then
+        pcall(function() chamsCache[p]:Destroy() end)
+        chamsCache[p] = nil
+    end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
+Players.PlayerAdded:Connect(createESP)
+Players.PlayerRemoving:Connect(removeESP)
+
+RunService.RenderStepped:Connect(function()
+    for p, highlight in pairs(chamsCache) do
+        if highlight and highlight.Parent then
+            highlight.Enabled = masterEspEnabled and chamsEnabled
+            highlight.FillColor = chamsColor
+            highlight.OutlineColor = chamsColor
+        end
+    end
+
+    for p, cache in pairs(espCache) do
+        local char = p.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        local head = char and char:FindFirstChild("Head")
+
+        if masterEspEnabled and char and hrp and humanoid and head and humanoid.Health > 0 then
+            local vector, onScreen = Cam:WorldToViewportPoint(hrp.Position)
+            if onScreen then
+                local topPos = head.Position + Vector3.new(0, 0.5, 0)
+                local bottomPos = hrp.Position - Vector3.new(0, 3, 0)
+                
+                local topScreen = Cam:WorldToViewportPoint(topPos)
+                local bottomScreen = Cam:WorldToViewportPoint(bottomPos)
+                
+                local height = math.abs(topScreen.Y - bottomScreen.Y)
+                local width = height / 2
+                
+                if boxEnabled then
+                    cache.Box.Size = Vector2.new(width, height)
+                    cache.Box.Position = Vector2.new(topScreen.X - width / 2, topScreen.Y)
+                    cache.Box.Color = espColor
+                    cache.Box.Visible = true
+                else
+                    cache.Box.Visible = false
+                end
+
+                if nameEnabled then
+                    local dist = math.floor((Cam.CFrame.Position - hrp.Position).Magnitude)
+                    cache.Name.Text = p.Name .. " [" .. dist .. "m]"
+                    cache.Name.Position = Vector2.new(topScreen.X, topScreen.Y - 18)
+                    cache.Name.Color = espColor
+                    cache.Name.Visible = true
+                else
+                    cache.Name.Visible = false
+                end
+
+                if healthEnabled then
+                    local hpPct = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+                    local barHeight = height * hpPct
+                    
+                    cache.HealthBg.Size = Vector2.new(3, height + 2)
+                    cache.HealthBg.Position = Vector2.new(cache.Box.Position.X - 6, cache.Box.Position.Y - 1)
+                    cache.HealthBg.Visible = true
+
+                    cache.Health.Size = Vector2.new(1, barHeight)
+                    cache.Health.Position = Vector2.new(cache.Box.Position.X - 5, cache.Box.Position.Y + (height - barHeight))
+                    cache.Health.Color = Color3.fromRGB(255 - (hpPct * 255), hpPct * 255, 0)
+                    cache.Health.Visible = true
+                else
+                    cache.HealthBg.Visible = false
+                    cache.Health.Visible = false
+                end
+            else
+                cache.Box.Visible = false
+                cache.Name.Visible = false
+                cache.HealthBg.Visible = false
+                cache.Health.Visible = false
+            end
+        else
+            cache.Box.Visible = false
+            cache.Name.Visible = false
+            cache.HealthBg.Visible = false
+            cache.Health.Visible = false
+        end
+    end
+end)
+
+-- ==================== SECURITY & ANTI-BAN ====================
+local antiBanEnabled = false
+pcall(function()
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        if antiBanEnabled and (method == "Kick" or method == "kick") and self == LP then
+            return nil
+        end
+        return oldNamecall(self, ...)
+    end)
+end)
+
+-- ==================== สร้างหมวดหมู่ (Tabs) ====================
+local tabCharacter = Window:CreateTab("ตัวละคร (Character)", "user")
+local tabVisuals = Window:CreateTab("มองทะลุ (ESP)", "eye")
+local tabSecurity = Window:CreateTab("ความปลอดภัย (Security)", "shield")
+
+-- 1. หมวดตัวละคร
+tabCharacter:CreateToggle({
+    Name = "เปิดบิน (Fly) [มือถือ]",
+    CurrentValue = false,
+    Callback = function(v)
+        fly = v
+        if v then startFly() else stopFly() end
+    end
+})
+
+tabCharacter:CreateSlider({
+    Name = "ความเร็วบิน",
+    Range = {10, 300},
+    Increment = 5,
+    CurrentValue = 50,
+    Callback = function(v) spd = v end
+})
+
+tabCharacter:CreateToggle({
+    Name = "กระโดดไม่จำกัด (Inf Jump)",
+    CurrentValue = false,
+    Callback = function(v) inf = v end
+})
+
+tabCharacter:CreateToggle({
+    Name = "กระโดดสูง (High Jump)",
+    CurrentValue = false,
+    Callback = function(v) 
+        hj = v 
+        local h = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if h then h.UseJumpPower = true h.JumpPower = hj and jp or 50 end
+    end
+})
+
+tabCharacter:CreateSlider({
+    Name = "ปรับความสูงของการกระโดด",
+    Range = {50, 300},
+    Increment = 5,
+    CurrentValue = 50,
+    Callback = function(v) 
+        jp = v 
+        local h = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if h and hj then h.JumpPower = jp end
+    end
+})
+
+-- 2. หมวดมองทะลุ (Master ESP + แยกฟังก์ชัน)
+tabVisuals:CreateToggle({
+    Name = "เปิด/ปิดมองทะลุทั้งหมด (Master ESP)",
+    CurrentValue = false,
+    Callback = function(v) masterEspEnabled = v end
+})
+
+tabVisuals:CreateSection("ตั้งค่าการมองทะลุแยกส่วน")
+
+tabVisuals:CreateToggle({
+    Name = "ESP กรอบ (Box ESP)",
+    CurrentValue = false,
+    Callback = function(v) boxEnabled = v end
+})
+
+tabVisuals:CreateToggle({
+    Name = "ESP ชื่อ + ระยะทาง (Name ESP)",
+    CurrentValue = false,
+    Callback = function(v) nameEnabled = v end
+})
+
+tabVisuals:CreateToggle({
+    Name = "ESP หลอดเลือด (Health Bar)",
+    CurrentValue = false,
+    Callback = function(v) healthEnabled = v end
+})
+
+tabVisuals:CreateColorPicker({
+    Name = "สีเส้น ESP",
+    Color = Color3.fromRGB(255, 50, 50),
+    Flag = "ESPColor",
+    Callback = function(Value)
+        espColor = Value
+    end
+})
+
+tabVisuals:CreateSection("ระบบมองทะลุตัวละคร (Chams)")
+
+tabVisuals:CreateToggle({
+    Name = "มองทะลุเห็นสีตัวละคร (Chams)",
+    CurrentValue = false,
+    Callback = function(v) chamsEnabled = v end
+})
+
+tabVisuals:CreateColorPicker({
+    Name = "สีตัวละครมองทะลุ",
+    Color = Color3.fromRGB(0, 255, 255),
+    Flag = "ChamsColor",
+    Callback = function(Value)
+        chamsColor = Value
+    end
+})
+
+-- 3. หมวดความปลอดภัย (Security)
+tabSecurity:CreateToggle({
+    Name = "ระบบกันแบน / ป้องกันถูกเตะ (Anti-Ban)",
+    CurrentValue = false,
+    Callback = function(v)
+        antiBanEnabled = v
+    end
+})
+
+LP.CharacterAdded:Connect(function()
+    task.wait(1)
+    if fly then startFly() end
+end)
